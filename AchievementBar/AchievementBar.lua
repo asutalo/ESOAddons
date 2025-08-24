@@ -5,7 +5,6 @@ function addon:AddToContextMenu(achievement)
     local achievementId = achievement:GetId()
     local trackedAchievement = self.trackedAchievement
     if #trackedAchievement == 1 and trackedAchievement[1].id == achievementId then
-        d("banana")
         AddCustomMenuItem("Stop Tracking", function()
             trackedAchievement[1] = nil
             self:ResetAchievementBar()
@@ -19,37 +18,17 @@ function addon:AddToContextMenu(achievement)
             end)
         end
     end
-    ShowMenu(achievement.control or achievement)
-end
-
-function addon:HookAchievement(achievement)
-    local origOnClicked = achievement.OnClicked
-    function achievement:OnClicked(...)
-        local button = ...
-        if button == MOUSE_BUTTON_INDEX_RIGHT then
-            -- Temporarily wrap ShowMenu to inject our button
-            local origShowMenu = ShowMenu
-            ShowMenu = function(...)
-                ShowMenu = origShowMenu -- Restore
-                addon:AddToContextMenu(self)
-                return origShowMenu(...)
-            end
-        end
-        return origOnClicked(self, ...)
-    end
 end
 
 function addon:SetUpAchievements()
-    local Achievement
-    local origFactory = ACHIEVEMENTS.achievementPool.m_Factory
-    ACHIEVEMENTS.achievementPool.m_Factory = function(...)
-        local achievement = origFactory(...)
-        if not Achievement and achievement then
-            Achievement = getmetatable(achievement).__index
-            self:HookAchievement(Achievement)
+    ZO_PreHook("ShowMenu", function(control)
+        local name = control and control.GetName and control:GetName()
+        if not name then return false end
+        if control and control.achievement then
+            addon:AddToContextMenu(control.achievement)
         end
-        return achievement
-    end
+        return false
+    end)
 end
 
 function addon:RefreshAchievementBarVisibility()
@@ -70,7 +49,7 @@ function addon:RefreshAchievementBarVisibility()
 end
 
 local function OnAchievementUpdated(_, achievementId)
-    if addon.trackedAchievement and addon.trackedAchievement[1].id == achievementId then
+    if #addon.trackedAchievement == 1 and addon.trackedAchievement[1].id == achievementId then
         addon:SetUpAchievementBar(addon.trackedAchievement[1])
     end
 end
@@ -142,23 +121,19 @@ function addon:Initialize()
     if #self.trackedAchievement == 1 then
         self:SetUpAchievementBar(self.trackedAchievement[1])
     end
-
     self:SetUpAchievements()
 end
 
-local function OnAddOnLoaded(_, addonName)
-    if addonName == addon.name then
-        em:UnregisterForEvent(addon.name, EVENT_ADD_ON_LOADED)
-        addon:Initialize()
-    end
-end
-
-
 --https://wiki.esoui.com/Events
-em:RegisterForEvent("AchievementBarCombat", EVENT_PLAYER_COMBAT_STATE, addon.RefreshAchievementBarVisibility)
-HUD_SCENE:RegisterCallback("StateChange", addon.RefreshAchievementBarVisibility)
-em:RegisterForEvent("AchievementBar_Update", EVENT_ACHIEVEMENT_UPDATED, OnAchievementUpdated)
-em:RegisterForEvent("AchievementBar_Awarded", EVENT_ACHIEVEMENT_AWARDED, OnAchievementAwarded)
+local function OnAddOnLoaded(_, addonName)
+    if addonName ~= addon.name then return end
+    em:UnregisterForEvent(addon.name, EVENT_ADD_ON_LOADED)
+    addon:Initialize()
+    em:RegisterForEvent("AchievementBarCombat", EVENT_PLAYER_COMBAT_STATE, addon.RefreshAchievementBarVisibility)
+    HUD_SCENE:RegisterCallback("StateChange", addon.RefreshAchievementBarVisibility)
+    em:RegisterForEvent("AchievementBar_Update", EVENT_ACHIEVEMENT_UPDATED, OnAchievementUpdated)
+    em:RegisterForEvent("AchievementBar_Awarded", EVENT_ACHIEVEMENT_AWARDED, OnAchievementAwarded)
+end
 em:RegisterForEvent(addon.name, EVENT_ADD_ON_LOADED, OnAddOnLoaded)
 
 ACHIEVEMENT_BAR = addon
